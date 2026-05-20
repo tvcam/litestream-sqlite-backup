@@ -50,8 +50,38 @@ To restore over the live database, stop the app and litestream first, move the l
 
 ## Retention
 
-Litestream 0.5.x silently ignores top-level `retention:` keys in some releases.
-Prefer a **bucket lifecycle policy** for hard retention caps — see `lifecycle.json`.
+**Do not set `retention:` in `litestream.yml`.** On litestream 0.5.x the key is
+silently accepted but ignored — the journal shows only built-in compaction monitors
+firing, never a retention sweep. Use a **bucket lifecycle policy** instead:
+object storage deletes old data, litestream stays untouched.
+
+`lifecycle.json` in this repo expires every object in the bucket after 7 days.
+To use a different window, edit the `Days` field. To scope to one app instead of
+the whole bucket, change `"Prefix": ""` to `"Prefix": "your-app/"`.
+
+Apply via AWS CLI (works against Hetzner since it's S3-compatible):
+
+```bash
+AWS_ACCESS_KEY_ID=$LITESTREAM_ACCESS_KEY_ID \
+AWS_SECRET_ACCESS_KEY=$LITESTREAM_SECRET_ACCESS_KEY \
+aws --endpoint-url https://hel1.your-objectstorage.com \
+    s3api put-bucket-lifecycle-configuration \
+    --bucket YOUR_BUCKET \
+    --lifecycle-configuration file://lifecycle.json
+```
+
+Verify it stuck:
+
+```bash
+AWS_ACCESS_KEY_ID=$LITESTREAM_ACCESS_KEY_ID \
+AWS_SECRET_ACCESS_KEY=$LITESTREAM_SECRET_ACCESS_KEY \
+aws --endpoint-url https://hel1.your-objectstorage.com \
+    s3api get-bucket-lifecycle-configuration --bucket YOUR_BUCKET
+```
+
+Lifecycle rules apply to all objects under the prefix, so existing snapshots/WAL
+older than the window will be cleaned up on the bucket's next sweep (typically
+within 24h).
 
 ## Notes
 

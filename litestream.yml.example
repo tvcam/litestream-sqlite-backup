@@ -8,3 +8,8 @@ dbs:
         region: eu-central
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+        # retention is intentionally NOT set here.
+        # The `retention:` key is silently ignored on litestream 0.5.x — it accepts the
+        # value but the journal shows only its built-in compaction monitors firing.
+        # Use a bucket lifecycle policy instead — see lifecycle.json in this repo.

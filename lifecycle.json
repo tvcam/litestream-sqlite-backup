@@ -1,7 +1,7 @@
 {
   "Rules": [
     {
-      "ID": "expire-old-backups",
+      "ID": "expire-old-backups-7d",
       "Status": "Enabled",
       "Filter": { "Prefix": "" },
       "Expiration": { "Days": 7 },

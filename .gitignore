@@ -1,0 +1,6 @@
+litestream.yml
+litestream.env
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.deb

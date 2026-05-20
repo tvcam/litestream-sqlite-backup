@@ -1,0 +1,10 @@
+dbs:
+  - path: /path/to/your/production.sqlite3
+    replicas:
+      - type: s3
+        bucket: YOUR_BUCKET
+        path: YOUR_APP/production.sqlite3
+        endpoint: https://hel1.your-objectstorage.com
+        region: eu-central
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}

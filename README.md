@@ -38,15 +38,89 @@ sudo journalctl -u litestream -f
 
 ## Restore
 
-```bash
-# dry-run restore to a scratch path (safe; doesn't touch live DB)
-sudo ./restore.sh /tmp/restore_test.sqlite3
+Litestream restores from the latest known state by default, or from any timestamp
+within the retention window for point-in-time recovery.
 
-# point-in-time restore
-sudo ./restore.sh /tmp/restore_test.sqlite3 2026-05-20T10:00:00Z
+### Dry-run restore (safe — doesn't touch the live DB)
+
+Always do this first to confirm the backup is intact:
+
+```bash
+sudo ./restore.sh /tmp/restore_test.sqlite3
+sqlite3 /tmp/restore_test.sqlite3 "PRAGMA integrity_check; SELECT COUNT(*) FROM sqlite_master;"
+rm /tmp/restore_test.sqlite3
 ```
 
-To restore over the live database, stop the app and litestream first, move the live file aside, then restore. See `restore.sh` comments.
+Integrity check should return `ok` and the schema count should be non-zero.
+
+### Point-in-time restore
+
+Restore to a specific UTC timestamp (ISO 8601):
+
+```bash
+sudo ./restore.sh /tmp/recovered.sqlite3 2026-05-20T10:00:00Z
+```
+
+Common case: "undo the bad migration that ran at 09:47." Pick a timestamp
+*before* the bad event. The restore goes to a scratch path; inspect it, then
+swap in if it looks right.
+
+### Live restore (over the running database)
+
+Only do this when the live DB is broken or you've confirmed via dry-run that
+the recovered state is what you want.
+
+```bash
+DB=/path/to/your/production.sqlite3
+
+# 1. stop the app so it doesn't write during restore
+kamal app stop                    # or: docker stop <container>
+
+# 2. stop litestream so it doesn't fight the restore
+sudo systemctl stop litestream
+
+# 3. move the live DB aside — litestream refuses to overwrite an existing file
+sudo mv "$DB" "${DB}.broken"
+sudo mv "${DB}-wal" "${DB}-wal.broken" 2>/dev/null || true
+sudo mv "${DB}-shm" "${DB}-shm.broken" 2>/dev/null || true
+
+# 4. restore (optionally with -timestamp)
+sudo ./restore.sh "$DB"
+# or for PITR:
+# sudo ./restore.sh "$DB" 2026-05-20T10:00:00Z
+
+# 5. fix ownership to match what the app expects (check before restore!)
+sudo chown <app-user>:<group> "$DB"
+
+# 6. start app, then litestream
+kamal app start
+sudo systemctl start litestream
+```
+
+### Gotchas
+
+- **"file already exists" error** — litestream refuses to overwrite. Move the
+  target aside first (step 3 above).
+- **Ownership** — after restore the file is owned by whoever ran the restore
+  (typically root). The app may not be able to write to it. `chown` to the
+  app's runtime user before starting the app.
+- **WAL/SHM sidecar files** — SQLite creates `-wal` and `-shm` files next to
+  the DB during normal operation. Move those aside too on a live restore; a
+  stale WAL next to a fresh DB will confuse SQLite.
+- **Timestamp must be UTC** — `2026-05-20T10:00:00Z`, not local time. Convert
+  first if needed.
+- **Outside the retention window** — if you ask for a timestamp older than
+  what's retained, litestream restores from the oldest available snapshot
+  instead of erroring loudly. Check the journal output of the restore.
+
+### Verify after restore
+
+```bash
+sqlite3 "$DB" "PRAGMA integrity_check;"     # expect: ok
+sqlite3 "$DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table';"
+# spot-check a recent row from a known table
+sqlite3 "$DB" "SELECT * FROM your_table ORDER BY id DESC LIMIT 1;"
+```
 
 ## Retention
 
